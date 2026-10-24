@@ -12,6 +12,14 @@ FROM alpine:3.17.0 as release
 WORKDIR /app
 COPY --from=build  /go/src/tasky/tasky .
 COPY --from=build  /go/src/tasky/assets ./assets
+
+# Database info
+ENV MONGODB_URI=mongodb://host.docker.internal:27017
+ENV SECRET_KEY="asdasd"
+
+#run locally
+EXPOSE 8080
+
 # Wiz exercise requirement: file with the candidate's name baked into the image
 COPY wizexercise.txt /app/wizexercise.txt
 EXPOSE 8080

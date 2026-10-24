@@ -1,0 +1,15 @@
+services:
+  tasky-app:
+    build: .
+    image: wiz-exercise-tasky-compose
+    ports:
+      - "8080:8080"
+    #environment:
+     # - MONGODB_URI=mongodb://host.docker.internal:27017
+      #- SECRET_KEY=asdasd
+    # O si prefieres leer directo del archivo .env:
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: always
