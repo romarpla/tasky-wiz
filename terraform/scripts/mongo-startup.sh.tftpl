@@ -1,0 +1,62 @@
+#!/bin/bash
+# Installs an outdated MongoDB (4.4, EOL Feb 2024) with auth and a daily backup to GCS.
+# Runs on every boot; the install part only runs once.
+set -euxo pipefail
+
+MARKER=/var/lib/mongo-setup-done
+
+if [ ! -f "$MARKER" ]; then
+  apt-get update
+  apt-get install -y gnupg curl
+
+  curl -fsSL https://pgp.mongodb.com/server-4.4.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-4.4.gpg
+  echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-4.4.gpg ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/4.4 multiverse" \
+    > /etc/apt/sources.list.d/mongodb-org-4.4.list
+  apt-get update
+  apt-get install -y mongodb-org
+  # Keep apt from upgrading the database
+  apt-mark hold mongodb-org mongodb-org-server mongodb-org-shell mongodb-org-tools
+
+  systemctl enable --now mongod
+  until mongo --quiet --eval 'db.runCommand({ ping: 1 })' >/dev/null 2>&1; do sleep 2; done
+
+  mongo admin --quiet --eval '
+    db.createUser({ user: "admin", pwd: "${admin_password}", roles: ["root"] });
+  '
+  mongo go-mongodb --quiet --eval '
+    db.createUser({ user: "tasky", pwd: "${app_password}", roles: [{ role: "readWrite", db: "go-mongodb" }] });
+  '
+
+  # Listen on all interfaces (the firewall limits who can reach it) and require auth
+  cat > /etc/mongod.conf <<CONF
+storage:
+  dbPath: /var/lib/mongodb
+systemLog:
+  destination: file
+  logAppend: true
+  path: /var/log/mongodb/mongod.log
+net:
+  port: 27017
+  bindIp: 0.0.0.0
+security:
+  authorization: enabled
+CONF
+  systemctl restart mongod
+
+  touch "$MARKER"
+fi
+
+cat > /usr/local/bin/mongo-backup.sh <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+STAMP=$(date -u +%Y-%m-%dT%H%M%SZ)
+FILE=/tmp/mongo-$STAMP.archive.gz
+mongodump --username admin --password '${admin_password}' --authenticationDatabase admin --gzip --archive="$FILE"
+/snap/bin/gcloud storage cp "$FILE" "gs://${backup_bucket}/backups/mongo-$STAMP.archive.gz"
+rm -f "$FILE"
+SCRIPT
+chmod 700 /usr/local/bin/mongo-backup.sh
+
+# Daily at 02:00 UTC
+echo "0 2 * * * root /usr/local/bin/mongo-backup.sh >> /var/log/mongo-backup.log 2>&1" > /etc/cron.d/mongo-backup
+chmod 644 /etc/cron.d/mongo-backup

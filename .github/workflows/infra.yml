@@ -1,0 +1,103 @@
+name: Infrastructure (Terraform)
+
+on:
+  pull_request:
+    paths: ["terraform/**", ".github/workflows/infra.yml"]
+  push:
+    branches: [main]
+    paths: ["terraform/**", ".github/workflows/infra.yml"]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "apply or destroy"
+        type: choice
+        options: [apply, destroy]
+        default: apply
+
+permissions:
+  contents: read
+  id-token: write        # OIDC token for Workload Identity Federation
+  security-events: write # upload scan results to the Security tab
+  pull-requests: write
+
+concurrency:
+  group: terraform
+  cancel-in-progress: false
+
+env:
+  TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
+  TF_VAR_alert_email: ${{ vars.ALERT_EMAIL }}
+  TF_IN_AUTOMATION: "true"
+
+defaults:
+  run:
+    working-directory: terraform
+
+jobs:
+  scan:
+    name: IaC security scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: terraform
+          framework: terraform
+          output_format: cli,sarif
+          output_file_path: console,checkov.sarif
+          # The exercise requires insecure settings on purpose, so findings are
+          # reported to the Security tab instead of blocking. Set to false to gate.
+          soft_fail: ${{ vars.IAC_SCAN_SOFT_FAIL != 'false' }}
+
+      - name: Upload results to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true
+        with:
+          sarif_file: checkov.sarif
+          category: checkov
+
+  plan:
+    name: Plan
+    needs: scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SA_EMAIL }}
+      - uses: hashicorp/setup-terraform@v3
+
+      - run: terraform fmt -check -recursive
+      - run: terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+      - run: terraform validate
+      - run: terraform plan -input=false -no-color -out=tfplan ${{ inputs.action == 'destroy' && '-destroy' || '' }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: terraform/tfplan
+
+  apply:
+    name: Apply
+    needs: plan
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Configure required reviewers on this environment so a human approves every apply
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SA_EMAIL }}
+      - uses: hashicorp/setup-terraform@v3
+      - uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: terraform
+      - run: terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+      - run: terraform apply -input=false -auto-approve tfplan

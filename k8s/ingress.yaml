@@ -1,0 +1,14 @@
+# GKE turns this Ingress into an external HTTP(S) Load Balancer
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tasky
+  namespace: tasky
+  annotations:
+    kubernetes.io/ingress.class: gce
+spec:
+  defaultBackend:
+    service:
+      name: tasky
+      port:
+        number: 80

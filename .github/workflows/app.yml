@@ -1,0 +1,96 @@
+name: Application (build, scan, deploy)
+
+on:
+  pull_request:
+    paths: ["app/**", "k8s/**", ".github/workflows/app.yml"]
+  push:
+    branches: [main]
+    paths: ["app/**", "k8s/**", ".github/workflows/app.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  security-events: write
+
+env:
+  REGION: us-central1
+  ZONE: us-central1-a
+  CLUSTER: wiz-gke
+  IMAGE: us-central1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/tasky/tasky:${{ github.sha }}
+
+jobs:
+  build-scan-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t "$IMAGE" app
+
+      - name: Check wizexercise.txt is in the image
+        run: docker run --rm --entrypoint cat "$IMAGE" /app/wizexercise.txt
+
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          format: sarif
+          output: trivy.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          # Report-only by default; set repo variable IMAGE_SCAN_GATE=true to block on findings
+          exit-code: ${{ vars.IMAGE_SCAN_GATE == 'true' && '1' || '0' }}
+
+      - name: Upload results to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true
+        with:
+          sarif_file: trivy.sarif
+          category: trivy
+
+      - uses: google-github-actions/auth@v2
+        if: github.event_name != 'pull_request'
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SA_EMAIL }}
+
+      - name: Push to Artifact Registry
+        if: github.event_name != 'pull_request'
+        run: |
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          docker push "$IMAGE"
+
+  deploy:
+    needs: build-scan-push
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SA_EMAIL }}
+      - uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.CLUSTER }}
+          location: ${{ env.ZONE }}
+
+      - name: Apply manifests
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+
+          # Build the app Secret from Secret Manager so no credential lives in git
+          kubectl -n tasky create secret generic tasky-secrets \
+            --from-literal=MONGODB_URI="$(gcloud secrets versions access latest --secret=tasky-mongodb-uri)" \
+            --from-literal=SECRET_KEY="$(gcloud secrets versions access latest --secret=tasky-secret-key)" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl apply -f k8s/rbac.yaml -f k8s/service.yaml -f k8s/ingress.yaml
+          sed "s|IMAGE_PLACEHOLDER|${IMAGE}|" k8s/deployment.yaml | kubectl apply -f -
+          kubectl -n tasky rollout status deployment/tasky --timeout=180s
+
+      - name: Validate wizexercise.txt in the running container
+        run: kubectl -n tasky exec deploy/tasky -- cat /app/wizexercise.txt

@@ -1,0 +1,2 @@
+project_id  = "your-cloudlabs-project-id"
+alert_email = "you@example.com"
