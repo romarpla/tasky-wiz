@@ -40,5 +40,3 @@ Internet ──SSH:22──► MongoDB 4.4 VM, Ubuntu 20.04 (public subnet, role
 | Preventive | Pipelines: OIDC auth (no keys), approval on `production` environment, branch protection |
 | Detective  | Log-based metric + alert on firewall changes, IAM policy changes and `kubectl exec`     |
 | Detective  | Checkov (IaC) and Trivy (image) results in GitHub Security tab                          |
-
-test commit
