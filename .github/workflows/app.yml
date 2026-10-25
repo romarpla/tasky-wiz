@@ -17,7 +17,7 @@ env:
   REGION: us-east4
   ZONE: us-east4
   CLUSTER: wiz-gke
-  IMAGE: us-central1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/tasky/tasky:${{ github.sha }}
+  IMAGE: us-east4-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/tasky/tasky:${{ github.sha }}
 
 jobs:
   build-scan-push:
