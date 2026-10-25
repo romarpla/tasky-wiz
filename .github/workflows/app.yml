@@ -15,7 +15,7 @@ permissions:
 
 env:
   REGION: us-east4
-  ZONE: us-east4
+  ZONE: us-east4-a
   CLUSTER: wiz-gke
   IMAGE: us-east4-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/tasky/tasky:${{ github.sha }}
 
