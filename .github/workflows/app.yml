@@ -14,8 +14,8 @@ permissions:
   security-events: write
 
 env:
-  REGION: us-central1
-  ZONE: us-central1-a
+  REGION: us-east4
+  ZONE: us-east4
   CLUSTER: wiz-gke
   IMAGE: us-central1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/tasky/tasky:${{ github.sha }}
 
