@@ -11,11 +11,11 @@ locals {
 resource "google_secret_manager_secret" "mongodb_uri" {
   secret_id = "tasky-mongodb-uri"
     replication {
-    user_managed {
-      replicas {
-        location = var.region
+      user_managed {
+        replicas {
+          location = var.region
+        }
       }
-    }
   }
   depends_on = [google_project_service.services]
 }
@@ -28,11 +28,11 @@ resource "google_secret_manager_secret_version" "mongodb_uri" {
 resource "google_secret_manager_secret" "jwt" {
   secret_id = "tasky-secret-key"
     replication {
-    user_managed {
-      replicas {
-        location = var.region
+      user_managed {
+        replicas {
+          location = var.region
+        }
       }
-    }
   }
   depends_on = [google_project_service.services]
 }
