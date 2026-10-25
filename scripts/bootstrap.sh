@@ -8,7 +8,7 @@ set -euo pipefail
 
 PROJECT_ID=$1
 GITHUB_REPO=$2
-REGION=us-central1
+REGION=us-east4
 STATE_BUCKET="${PROJECT_ID}-tfstate"
 SA_NAME=github-deployer
 SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
