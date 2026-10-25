@@ -1,32 +1,32 @@
 #!/bin/bash
-# Installs an outdated MongoDB (4.4, EOL Feb 2024) with auth and a daily backup to GCS.
+# Installs an outdated MongoDB (6.0, EOL Jul 2025) with auth and a daily backup to GCS.
 # Runs on every boot; the install part only runs once.
 set -euxo pipefail
-
+ 
 MARKER=/var/lib/mongo-setup-done
-
+ 
 if [ ! -f "$MARKER" ]; then
   apt-get update
   apt-get install -y gnupg curl
-
-  curl -fsSL https://pgp.mongodb.com/server-4.4.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-4.4.gpg
-  echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-4.4.gpg ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/4.4 multiverse" \
-    > /etc/apt/sources.list.d/mongodb-org-4.4.list
+ 
+  curl -fsSL https://pgp.mongodb.com/server-6.0.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-6.0.gpg
+  echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-6.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/6.0 multiverse" \
+    > /etc/apt/sources.list.d/mongodb-org-6.0.list
   apt-get update
   apt-get install -y mongodb-org
   # Keep apt from upgrading the database
-  apt-mark hold mongodb-org mongodb-org-server mongodb-org-shell mongodb-org-tools
-
+  apt-mark hold mongodb-org mongodb-org-server mongodb-org-database mongodb-org-tools mongodb-mongosh
+ 
   systemctl enable --now mongod
-  until mongo --quiet --eval 'db.runCommand({ ping: 1 })' >/dev/null 2>&1; do sleep 2; done
-
-  mongo admin --quiet --eval '
+  until mongosh --quiet --eval 'db.runCommand({ ping: 1 })' >/dev/null 2>&1; do sleep 2; done
+ 
+  mongosh admin --quiet --eval '
     db.createUser({ user: "admin", pwd: "${admin_password}", roles: ["root"] });
   '
-  mongo go-mongodb --quiet --eval '
+  mongosh go-mongodb --quiet --eval '
     db.createUser({ user: "tasky", pwd: "${app_password}", roles: [{ role: "readWrite", db: "go-mongodb" }] });
   '
-
+ 
   # Listen on all interfaces (the firewall limits who can reach it) and require auth
   cat > /etc/mongod.conf <<CONF
 storage:
@@ -42,10 +42,10 @@ security:
   authorization: enabled
 CONF
   systemctl restart mongod
-
+ 
   touch "$MARKER"
 fi
-
+ 
 cat > /usr/local/bin/mongo-backup.sh <<'SCRIPT'
 #!/bin/bash
 set -euo pipefail
@@ -56,7 +56,7 @@ mongodump --username admin --password '${admin_password}' --authenticationDataba
 rm -f "$FILE"
 SCRIPT
 chmod 700 /usr/local/bin/mongo-backup.sh
-
+ 
 # Daily at 02:00 UTC
 echo "0 2 * * * root /usr/local/bin/mongo-backup.sh >> /var/log/mongo-backup.log 2>&1" > /etc/cron.d/mongo-backup
 chmod 644 /etc/cron.d/mongo-backup
