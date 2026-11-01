@@ -50,7 +50,7 @@ resource "google_monitoring_alert_policy" "risky_changes" {
         logName:"cloudaudit.googleapis.com" AND (
           protoPayload.methodName=~"compute.firewalls.(insert|patch|update)" OR
           protoPayload.methodName="SetIamPolicy" OR
-          protoPayload.methodName="io.k8s.core.v1.pods.exec.create"
+          protoPayload.methodName="io.k8s.core.v1.pods.exec"
         )
       EOT
     }
