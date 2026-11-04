@@ -33,7 +33,7 @@ resource "google_compute_instance" "mongo" {
 
   boot_disk {
     initialize_params {
-      # INTENTIONAL WEAKNESS: Ubuntu 20.04 (2020), past end of standard support
+      # INTENTIONAL WEAKNESS: Ubuntu 22.04 (2020), past end of standard support
       image = "ubuntu-os-cloud/ubuntu-2204-lts"
       size  = 20
     }
